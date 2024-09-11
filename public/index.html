@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload de Documento</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 50px;
+        }
+        input[type="file"] {
+            margin-bottom: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+        }
+        .response {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Validação de Documento</h1>
+    
+    <input type="file" id="fileInput" accept="image/*,application/pdf">
+    <button id="uploadButton">Enviar</button>
+
+    <div class="response" id="response"></div>
+
+    <script>
+        document.getElementById('uploadButton').addEventListener('click', function() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            const fileExtension = file.name.split('.').pop().toLowerCase();
+
+            if (!file) {
+                alert("Por favor, selecione um arquivo.");
+                return;
+            }
+
+            const reader = new FileReader();
+            
+            reader.onload = function() {
+                const base64String = reader.result.split(',')[1]; // Remove a parte "data:*/*;base64,"
+                sendFileToServer(base64String, fileExtension);
+            };
+            
+            reader.readAsDataURL(file); // Converte o arquivo para Base64
+        });
+
+        function sendFileToServer(base64String, ext) {
+            fetch('/upload', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ file: base64String, ext })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('response').innerText = `Resposta do servidor: ${JSON.stringify(data)}`;
+            })
+            .catch(error => {
+                document.getElementById('response').innerText = `Erro: ${error}`;
+            });
+        }
+    </script>
+</body>
+</html>
