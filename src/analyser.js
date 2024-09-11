@@ -23,7 +23,10 @@ class OcrService {
     };
 
     try {
-      const response = AnalyzeDocumentCommand(params);
+      const response = new AnalyzeDocumentCommand({
+        FeatureTypes: ["TABLES", "FORMS", "SIGNATURES", "LAYOUT", "QUERIES"],
+        ...params,
+      });
       return response;
     } catch (err) {
       console.error(err);

@@ -4,7 +4,7 @@ const bodyParser = require("body-parser");
 const app = express();
 const sharp = require("sharp");
 const fs = require("fs");
-const { OcrService } = require("./analyser");
+const { OcrService } = require("./src/analyser");
 const PORT = 3000;
 
 // Middleware para interpretar o corpo das requisições
