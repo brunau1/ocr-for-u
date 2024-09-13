@@ -1,5 +1,6 @@
 const fs = require("fs");
 const Path = require("path");
+const levenshtein = require("js-levenshtein");
 
 function readTextualData() {
   // le os arquivos json da pasta public
@@ -28,32 +29,135 @@ function readTextualData() {
 
   console.log("Textual data saved successfully!");
 
-  console.log("Dados para pegar os nomes:", data[2]);
-
-  const names = extractNames(data[2]);
-  console.log("Nomes encontrados:", names);
-
-  const dates = extractDates(data[2]);
-  console.log("Datas encontradas:", dates);
-
-  const cpfs = extractDocuments(data[2]);
-  console.log("CPFs encontrados:", cpfs);
-
-  const hasLabel = data[2].some((text) => /(validad)/gi.test(text));
-  const isExpired = isDocumentExpired(dates, hasLabel);
-
-  console.log("Documento expirado:", isExpired);
+  analyseData(data[0]);
 }
 
-function sanitizeText(texto) {
+function compareStrings(str1, str2) {
+  const distance = levenshtein(str1, str2);
+  return distance;
+}
+
+function getMostSimilarString(reference, strings = []) {
+  const mostSimilar = {
+    distance: Infinity,
+    text: "",
+  };
+
+  reference = reference.toLowerCase();
+  strings = strings.map((str) => str.toLowerCase());
+
+  strings.forEach((str) => {
+    const distance = compareStrings(reference, str);
+
+    if (distance < mostSimilar.distance) {
+      mostSimilar.distance = distance;
+      mostSimilar.text = str;
+    }
+  });
+
+  return mostSimilar;
+}
+
+function checkIfHasBirthDate(reference, dates = []) {
+  const refDate = new Date(reference);
+
+  if (isNaN(refDate.getTime())) {
+    return false;
+  }
+
+  const birthDateWasFound = dates.some((date) => {
+    const currDate = new Date(date);
+    return currDate.getTime() === refDate.getTime();
+  });
+
+  return birthDateWasFound;
+}
+
+function checkIfDocumentWasFound(reference, possibleDocuments = []) {
+  reference = normalizeCpf(reference);
+
+  const documentWasFound = possibleDocuments.some(
+    (document) => normalizeCpf(document) === reference
+  );
+
+  return documentWasFound;
+}
+
+function extractRelevantData(data) {
+  //   console.log("Dados para análise:", data);
+
+  const names = extractNames(data);
+  console.log("Nomes encontrados:", names);
+
+  const dates = extractDates(data);
+  console.log("Datas encontradas:", dates);
+
+  const cpfs = extractDocuments(data);
+  console.log("CPFs encontrados:", cpfs);
+
+  const hasExpirationLabel = data.some((text) => /(validad)/gi.test(text));
+
+  return {
+    names,
+    dates,
+    cpfs,
+    hasExpirationLabel,
+  };
+}
+
+function normalizeCpf(cpf) {
+  return cpf.replace(/[^\d]/g, "");
+}
+
+function analyseData(data) {
+  const dataToValidate = {};
+
+  const { names, dates, cpfs, hasExpirationLabel } = extractRelevantData(data);
+  const isExpired = isDocumentExpired(dates, hasExpirationLabel);
+
+  console.log("Possui label de validade:", hasExpirationLabel ? "Sim" : "Não");
+  console.log("Documento expirado:", isExpired ? "Sim" : "Não");
+
+  const currName = dataToValidate.names[0];
+  // valid name -> distance <= 3
+  const mostSimilarName = getMostSimilarString(currName, names);
+  //   console.log(
+  //     `Nome mais similar com ${currName}: ${mostSimilarName.text} - Distância: ${mostSimilarName.distance}`
+  //   );
+
+  console.log(
+    "o nome é válido?",
+    mostSimilarName.distance <= 3 ? "Sim" : "Não"
+  );
+
+  const currDate = dataToValidate.dates[0];
+
+  const hasBirthDate = checkIfHasBirthDate(currDate, dates);
+
+  console.log("Data de nascimento encontrada?", hasBirthDate ? "Sim" : "Não");
+
+  const currCpf = dataToValidate.cpfs[0];
+
+  const hasDocument = checkIfDocumentWasFound(currCpf, cpfs);
+
+  console.log("CPF encontrado?", hasDocument ? "Sim" : "Não");
+
+  console.log("dados comaparados com os dados de validação", {
+    currName,
+    currDate,
+    currCpf,
+  });
+}
+
+function sanitizeText(text) {
   // Remover símbolos e caracteres especiais, exceto - e /
-  texto = texto.replace(/[^\w\s\/-]/gi, "").trim();
-  return texto;
+  text = text.replace(/[^\w\s\/-]/gi, "").trim();
+  return text;
 }
 
 function extractNames(texts = []) {
   const commonWords =
-    /(diretor|carteira|estadual|republica|assinatura|assinado|digital|ministro|data|federativa|secretaria|transporte|transito|ministerio|filiacao|nacionalidade|habilitacao|registro|emissor|local)/i;
+    /(diretor|carteira|stadual|republic|ssinatur|ssinad|digital|ministr|data|federativ|secretaria|transport|transit|ministerio|filiacao|nacionalidad|habilitacao|registr|emiss|local)/i;
 
   const nameExp =
     /\b[A-ZÁ-Ú][a-zá-ú]+\s?(?:(?:de|do|da|dos|das|e)\s)?[A-ZÁ-Ú][a-zá-ú]+(?:\s[A-ZÁ-Ú][a-zá-ú]+)+\b/gi;
@@ -78,7 +182,7 @@ function extractDates(texts = []) {
   const datesExp = /\b\d{1,2}[\/-]\d{1,2}[\/-]\d{4}\b/g;
 
   texts.forEach((text) => {
-    if (text.match(datesExp)) {
+    if (text.match(datesExp) && /[a-z]/gi.test(text) === false) {
       dates.push(text);
     }
   });
@@ -116,7 +220,7 @@ function isDocumentExpired(datas = [], hasExpirationLabel) {
   return false;
 }
 function extractDocuments(texts = []) {
-  // Regex para capturar CPF em qualquer formato
+  // Regex para capturar CPF em qualquer formato válido
   const cpfs = [];
   const regexCPF = /([0-9]{3}[\.]?[0-9]{3}[\.]?[0-9]{3}[-]?[0-9]{2})/g;
 
@@ -127,11 +231,8 @@ function extractDocuments(texts = []) {
   });
 
   // formata os cpfs encontrados
-  return cpfs.map((cpf) => {
-    return cpf.replace(/[^\d]/g, "");
-  });
+  return cpfs.map((cpf) => normalizeCpf(cpf));
 }
-
 function wordCount(text) {
   // Remover símbolos e caracteres especiais
   let cleanedText = text.replace(/[^\w\s]/gi, "").toLowerCase();
