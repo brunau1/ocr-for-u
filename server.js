@@ -5,6 +5,7 @@ const app = express();
 const sharp = require("sharp");
 const fs = require("fs");
 const { OcrService } = require("./src/analyser");
+const { saveToArchive } = require("./src/archive");
 const PORT = 3000;
 
 // Middleware para interpretar o corpo das requisições
@@ -30,13 +31,15 @@ app.post("/upload", async (req, res) => {
 
   fs.writeFileSync(`./public/image.${ext}`, grayscaleImageBuffer); // salva a imagem para visualização
 
+  console.log("Arquivo recebido com sucesso!");
+
   const ocrService = new OcrService();
 
   const response = await ocrService.detectText(grayscaleImageBuffer);
 
-  console.log("Arquivo recebido com sucesso!");
+  saveToArchive(response); // para analisar o arquivo posteriormente
 
-  res.json({ analysis: JSON.stringify(response, null, 2) });
+  res.json({ response: 'Analysis saved successfully' });
 });
 
 // Inicia o servidor
