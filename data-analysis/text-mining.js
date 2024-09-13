@@ -1,6 +1,6 @@
 const fs = require("fs");
 const Path = require("path");
-const levenshtein = require("js-levenshtein");
+const levenshtein = require("fast-levenshtein");
 
 function readTextualData() {
   // le os arquivos json da pasta public
@@ -29,15 +29,15 @@ function readTextualData() {
 
   console.log("Textual data saved successfully!");
 
-  analyseData(data[0]);
+  analyseData(data[1]);
 }
 
 function compareStrings(str1, str2) {
-  const distance = levenshtein(str1, str2);
+  const distance = levenshtein.get(str1, str2);
   return distance;
 }
 
-function getMostSimilarString(reference, strings = []) {
+function getMostSimilarText(reference, strings = []) {
   const mostSimilar = {
     distance: Infinity,
     text: "",
@@ -66,14 +66,21 @@ function checkIfHasBirthDate(reference, dates = []) {
   }
 
   const birthDateWasFound = dates.some((date) => {
-    const currDate = new Date(date);
+    const dateSplit = date.split(/[\/-]/);
+    const formattedDate = `${dateSplit[2]}-${
+      dateSplit[1].length > 1 ? dateSplit[1] : `0${dateSplit[1]}`
+    }-${
+      dateSplit[0].length > 1 ? dateSplit[0] : `0${dateSplit[0]}`
+    }T00:00:00.000+00:00`;
+
+    const currDate = new Date(formattedDate);
     return currDate.getTime() === refDate.getTime();
   });
 
   return birthDateWasFound;
 }
 
-function checkIfDocumentWasFound(reference, possibleDocuments = []) {
+function wasDocumentFound(reference, possibleDocuments = []) {
   reference = normalizeCpf(reference);
 
   const documentWasFound = possibleDocuments.some(
@@ -109,18 +116,62 @@ function normalizeCpf(cpf) {
   return cpf.replace(/[^\d]/g, "");
 }
 
+function getDocumentType(texts = []) {
+  const possibleDocumentPatterns = {
+    CNH: (text) => /(habilitacao|habilitação|habilitao)/gi.test(text),
+    RG: (text) => /(carteira de identidad)/gi.test(text),
+  };
+
+  const documentType = Object.keys(possibleDocumentPatterns).find((type) =>
+    texts.some((text) => possibleDocumentPatterns[type](text))
+  );
+
+  return documentType;
+}
+
+function hasEssentialData(texts = [], docType) {
+  const essentialData = [
+    /(cpf|([0-9]{3}[\.]?[0-9]{3}[\.]?[0-9]{3}[-]?[0-9]{2}))/g,
+    /(data nasciment|data de nasciment|nascimento)/gi,
+  ];
+
+  if (docType === "CNH") {
+    essentialData.push(/(validad)/gi);
+  }
+
+  const hasAllEssentialData = essentialData.every((pattern) =>
+    texts.some((text) => text.match(pattern))
+  );
+
+  console.log("Dados essenciais encontrados?", hasAllEssentialData);
+
+  return hasAllEssentialData;
+}
+
 function analyseData(data) {
-  const dataToValidate = {};
+  const dataToValidate = {
+    names: ["João da Silva", "Maria de Souza", "giulia de paula lage"],
+    dates: [
+      "01/01/2022",
+      "01/01/2023",
+      new Date("1995-01-24T00:00:00.000+00:00"),
+    ],
+    cpfs: ["12345678901", "123.456.789-01", "10724283692"],
+  };
 
   const { names, dates, cpfs, hasExpirationLabel } = extractRelevantData(data);
   const isExpired = isDocumentExpired(dates, hasExpirationLabel);
+  const documentType = getDocumentType(data);
+  const hasEssential = hasEssentialData(data, documentType);
 
+  console.log("Tipo de documento:", documentType);
   console.log("Possui label de validade:", hasExpirationLabel ? "Sim" : "Não");
   console.log("Documento expirado:", isExpired ? "Sim" : "Não");
+  console.log("Possui dados essenciais:", hasEssential ? "Sim" : "Não");
 
-  const currName = dataToValidate.names[0];
+  const currName = dataToValidate.names[2];
   // valid name -> distance <= 3
-  const mostSimilarName = getMostSimilarString(currName, names);
+  const mostSimilarName = getMostSimilarText(currName, names);
   //   console.log(
   //     `Nome mais similar com ${currName}: ${mostSimilarName.text} - Distância: ${mostSimilarName.distance}`
   //   );
@@ -130,23 +181,33 @@ function analyseData(data) {
     mostSimilarName.distance <= 3 ? "Sim" : "Não"
   );
 
-  const currDate = dataToValidate.dates[0];
+  const currDate = dataToValidate.dates[2];
 
   const hasBirthDate = checkIfHasBirthDate(currDate, dates);
 
   console.log("Data de nascimento encontrada?", hasBirthDate ? "Sim" : "Não");
 
-  const currCpf = dataToValidate.cpfs[0];
+  const currCpf = dataToValidate.cpfs[2];
 
-  const hasDocument = checkIfDocumentWasFound(currCpf, cpfs);
+  const documentFound = wasDocumentFound(currCpf, cpfs);
 
-  console.log("CPF encontrado?", hasDocument ? "Sim" : "Não");
+  console.log("CPF encontrado?", documentFound ? "Sim" : "Não");
 
   console.log("dados comaparados com os dados de validação", {
     currName,
     currDate,
     currCpf,
   });
+
+  const checkResults = [
+    mostSimilarName.distance <= 3,
+    hasBirthDate,
+    documentFound,
+  ];
+
+  const conclusion = checkResults.every((result) => result === true) && !isExpired;
+
+  console.log("Conclusão:", conclusion ? "Documento válido" : "Documento inválido");
 }
 
 function sanitizeText(text) {
@@ -204,11 +265,11 @@ function isDocumentExpired(datas = [], hasExpirationLabel) {
   datas.forEach((data) => {
     const [_, __, year] = data.split(/[\/-]/);
 
-    if (parseInt(year) > parseInt(actualYear)) {
+    if (parseInt(year) > actualYear) {
       expiration = data;
     }
 
-    if (parseInt(year) === parseInt(actualYear)) {
+    if (parseInt(year) === actualYear) {
       sameYearDate = data;
     }
   });
